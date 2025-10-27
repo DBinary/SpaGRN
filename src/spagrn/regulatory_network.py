@@ -182,15 +182,21 @@ class InferNetwork(Network):
             noweights = self.params["noweights"]
 
         # 1. load TF list
+        print('Step 1: Loading TF list...')
         if tfs_fn is None:
             tfs = 'all'
+            print('Loaded all TFs')
         else:
             tfs = self.load_tfs(tfs_fn)
+            print(f'Loaded {len(tfs)} TFs')
 
         # 2. load the ranking databases
+        print('Step 2: Loading ranking databases...')
         dbs = self.load_database(databases)
+        print(f'Loaded {len(dbs)} ranking database(s)')
 
         # 3. GRN Inference
+        print('Step 3: Starting GRN Inference (spatial gene co-expression analysis)...')
         adjacencies = self.spg(self.data,
                                gene_list=gene_list,
                                tf_list=tfs,
@@ -210,17 +216,21 @@ class InferNetwork(Network):
                                combine=combine,
                                mode=mode,
                                somde_k=somde_k)
+        print('Step 3: GRN Inference completed.')
 
         # 4. Compute Modules
+        print('Step 4: Computing co-expression modules...')
         # ctxcore.genesig.Regulon
         modules = self.get_modules(adjacencies,
                                    exp_mat,
                                    cache=cache,
                                    save_tmp=save_tmp,
                                    rho_mask_dropouts=rho_mask_dropouts)
+        print('Step 4: Modules computation completed.')
         # before_cistarget(tfs, modules, project_name)
 
         # 5. Regulons Prediction aka cisTarget
+        print('Step 5: Running regulons prediction (cisTarget)...')
         # ctxcore.genesig.Regulon
         regulons = self.prune_modules(modules,
                                       dbs,
@@ -233,8 +243,10 @@ class InferNetwork(Network):
                                       auc_threshold=self.params["prune_auc_threshold"],
                                       nes_threshold=self.params["nes_threshold"],
                                       motif_similarity_fdr=self.params["motif_similarity_fdr"])
+        print('Step 5: Regulons prediction completed.')
 
         # 6.0. Cellular Enrichment (aka AUCell)
+        print('Step 6.0: Calculating cellular enrichment (AUCell)...')
         self.cal_auc(exp_mat,
                      regulons,
                      auc_threshold=self.params["auc_threshold"],
@@ -244,20 +256,31 @@ class InferNetwork(Network):
                      noweights=noweights,
                      normalize=normalize,
                      fn=os.path.join(self.tmp_dir, 'auc_mtx.csv'))
+        print('Step 6.0: Cellular enrichment calculation completed.')
 
         # 6.1. Receptor AUCs
         if niche_df is not None:
+            print('Step 6.1: Calculating receptor AUCs...')
             self.get_filtered_receptors(niche_df, receptor_key=receptor_key)
             receptor_auc_mtx = self.receptor_auc()
             self.isr(receptor_auc_mtx)
+            print('Step 6.1: Receptor AUCs calculation completed.')
 
         # 7. Calculate Regulon Specificity Scores
+        print('Step 7: Calculating regulon specificity scores...')
         self.cal_regulon_score(cluster_label=cluster_label, save_tmp=save_tmp,
                                fn=f'{self.tmp_dir}/regulon_specificity_scores.txt')
+        print('Step 7: Regulon specificity scores calculation completed.')
 
         # 8. Save results to h5ad file
+        print('Step 8: Saving results to h5ad file...')
         # dtype=object
-        self.data.write_h5ad(os.path.join(output_dir, f'{self.project_name}_spagrn.h5ad'))
+        output_file = os.path.join(output_dir, f'{self.project_name}_spagrn.h5ad')
+        self.data.write_h5ad(output_file)
+        print(f'Step 8: Results saved to {output_file}')
+        print('========================================')
+        print('SpaGRN inference pipeline completed successfully!')
+        print('========================================')
         return self.data
 
     @property
