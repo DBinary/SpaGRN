@@ -602,15 +602,19 @@ class InferNetwork(Network):
         :param fn: output file name
         :return: A dataframe, local correlation Z-scores between genes (shape is genes x genes)
         """
+        print('[spg] Entering spg method')
         global local_correlations
         if cache and os.path.isfile(fn):
-            print(f'Found cached file {fn}')
+            print(f'[spg] Found cached file {fn}')
             local_correlations = pd.read_csv(fn)
             self.data.uns['adj'] = local_correlations
+            print('[spg] Returning cached local_correlations')
             return local_correlations
         else:
+            print('[spg] No cached file found, computing new correlations')
             # 2024-12-20: select genes or provide a list of genes
             if gene_list:
+                print('[spg] Using provided gene_list')
                 hs_genes = gene_list
                 print('Computing spatial weights matrix...')
                 self.ind, neighbors, self.weights_n = neighbors_and_weights(data, latent_obsm_key=latent_obsm_key,
@@ -618,16 +622,20 @@ class InferNetwork(Network):
                 Weights = get_w(self.ind, self.weights_n)
                 self.weights = Weights
             else:
+                print('[spg] No gene_list provided, computing from hotspot')
                 hs = hotspot.Hotspot(data,
                                      layer_key=layer_key,
                                      model=model,
                                      latent_obsm_key=latent_obsm_key,
                                      umi_counts_obs_key=umi_counts_obs_key,
                                      **kwargs)
+                print('[spg] Creating KNN graph...')
                 hs.create_knn_graph(weighted_graph=weighted_graph, n_neighbors=n_neighbors)
+                print('[spg] Computing autocorrelations...')
                 hs_results = hs.compute_autocorrelations()
 
                 # 1: Select genes
+                print('[spg] Selecting genes via spatial autocorrelation...')
                 self.spatial_autocorrelation(data,
                                              layer_key=layer_key,
                                              latent_obsm_key=latent_obsm_key,
@@ -638,8 +646,10 @@ class InferNetwork(Network):
                                              cache=cache)
                 self.more_stats['FDR'] = hs_results.FDR
                 if save_tmp:
+                    print('[spg] Saving more_stats to file...')
                     self.more_stats.to_csv(f'{self.tmp_dir}/more_stats.csv', sep='\t')
 
+                print('[spg] Calling select_genes...')
                 hs_genes = self.select_genes(methods=methods,
                                              fdr_threshold=fdr_threshold,
                                              local=local,
@@ -647,20 +657,24 @@ class InferNetwork(Network):
                                              operation=operation)
                 hs_genes = list(hs_genes)
                 assert len(hs_genes) > 0
+                print(f'[spg] Selected {len(hs_genes)} genes')
                 if save_tmp:
                     save_list(hs_genes, fn=f'{self.tmp_dir}/selected_genes.txt')
 
             # 2. Define gene-gene relationships with pair-wise local correlations
-            print(f'Current mode is {mode}')
+            print(f'[spg] Current mode is {mode}')
             if mode == 'zscore':
+                print('[spg] Computing local correlations in zscore mode...')
                 # subset by TFs
                 local_correlations = hs.compute_local_correlations(hs_genes, jobs=jobs)  # jobs for parallelization
                 if tf_list:
+                    print('[spg] Filtering by TF list...')
                     common_tf_list = list(set(tf_list).intersection(set(local_correlations.columns)))
                     assert len(common_tf_list) > 0, 'predefined TFs not found in data'
                 else:
                     common_tf_list = local_correlations.columns
                 # reshape matrix
+                print('[spg] Reshaping matrix...')
                 local_correlations['TF'] = local_correlations.columns
                 local_correlations = local_correlations.melt(id_vars=['TF'])
                 local_correlations.columns = ['TF', 'target', 'importance']
@@ -669,9 +683,12 @@ class InferNetwork(Network):
                 local_correlations = local_correlations[local_correlations.TF != local_correlations.target]
 
             elif mode == 'moran':
+                print('[spg] Computing local correlations in moran mode...')
                 tfs_in_data = list(set(tf_list).intersection(set(data.var_names)))
                 select_genes_not_tfs = list(set(hs_genes) - set(tfs_in_data))
+                print('[spg] Computing flat weights...')
                 fw = flat_weights(data.obs_names, self.ind, self.weights_n, n_neighbors=n_neighbors)
+                print('[spg] Computing global bivariate Moran...')
                 local_correlations = global_bivariate_moran_R(data,
                                                               fw,
                                                               tfs_in_data,
@@ -680,9 +697,12 @@ class InferNetwork(Network):
                                                               layer_key=layer_key)
 
             elif mode == 'geary':
+                print('[spg] Computing local correlations in geary mode...')
                 tfs_in_data = list(set(tf_list).intersection(set(data.var_names)))
                 select_genes_not_tfs = list(set(hs_genes) - set(tfs_in_data))
+                print('[spg] Computing flat weights...')
                 fw = flat_weights(data.obs_names, self.ind, self.weights_n, n_neighbors=n_neighbors)
+                print('[spg] Computing global bivariate Geary C...')
                 local_correlations = global_bivariate_gearys_C(data,
                                                                fw,
                                                                tfs_in_data,
@@ -690,10 +710,13 @@ class InferNetwork(Network):
                                                                num_workers=jobs,
                                                                layer_key=layer_key)
 
+        print('[spg] Processing local_correlations...')
         local_correlations['importance'] = local_correlations['importance'].astype(np.float64)
         self.data.uns['adj'] = local_correlations
         if save_tmp:
+            print('[spg] Saving local_correlations to file...')
             local_correlations.to_csv(os.path.join(self.tmp_dir, f'{mode}_adj.csv'), index=False)
+        print('[spg] Exiting spg method')
         return local_correlations
 
     # ------------------------------------------------------#
@@ -718,18 +741,24 @@ class InferNetwork(Network):
         :param cache:
         :return:
         """
+        print('[get_modules] Entering get_modules method')
         if cache and os.path.isfile(f'{self.tmp_dir}/modules.pkl'):
-            print(f'Find cached file {self.tmp_dir}/modules.pkl')
+            print(f'[get_modules] Find cached file {self.tmp_dir}/modules.pkl')
             modules = pickle.load(open(f'{self.tmp_dir}/modules.pkl', 'rb'))
             self.modules = modules
+            print('[get_modules] Returning cached modules')
             return modules
+        print('[get_modules] Computing modules from adjacencies...')
         modules = list(
             modules_from_adjacencies(adjacencies, matrix, rho_mask_dropouts=rho_mask_dropouts, **kwargs)
         )
+        print(f'[get_modules] Created {len(modules)} modules')
         self.modules = modules
         if save_tmp:
+            print('[get_modules] Saving modules to file...')
             with open(f'{self.tmp_dir}/modules.pkl', "wb") as f:
                 pickle.dump(modules, f)
+        print('[get_modules] Exiting get_modules method')
         return modules
 
     # ------------------------------------------------------#
