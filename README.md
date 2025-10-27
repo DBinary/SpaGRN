@@ -16,6 +16,7 @@ RRID: SCR_023451
 
 [**Installation**](https://spagrn.readthedocs.io/en/latest/content/00_Installation.html) **-** 
 [**Quick start**](https://spagrn.readthedocs.io/en/latest/content/01_Basic_Usage.html) **-** 
+[**grn.infer Function Analysis**](docs/source/content/grn_infer_function_analysis.rst) **-**
 [**Tutorial**](https://spagrn.readthedocs.io/en/latest/Tutorials/index.html) **-** 
 [**Documentation**](https://spagrn.readthedocs.io/en/latest/index.html) 
 

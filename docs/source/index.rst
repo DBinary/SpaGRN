@@ -89,6 +89,8 @@ Workflow
 
     content/00_Installation
     content/01_Basic_Usage
+    content/grn_infer_function_analysis
+    content/grn_infer_function_analysis_en
     Tutorials/index
     content/03_References
     
