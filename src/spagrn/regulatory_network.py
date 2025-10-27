@@ -185,9 +185,10 @@ class InferNetwork(Network):
         print('Step 1: Loading TF list...')
         if tfs_fn is None:
             tfs = 'all'
+            print('Loaded all TFs')
         else:
             tfs = self.load_tfs(tfs_fn)
-        print(f'Loaded {len(tfs) if tfs != "all" else "all"} TFs')
+            print(f'Loaded {len(tfs)} TFs')
 
         # 2. load the ranking databases
         print('Step 2: Loading ranking databases...')
@@ -274,8 +275,9 @@ class InferNetwork(Network):
         # 8. Save results to h5ad file
         print('Step 8: Saving results to h5ad file...')
         # dtype=object
-        self.data.write_h5ad(os.path.join(output_dir, f'{self.project_name}_spagrn.h5ad'))
-        print(f'Step 8: Results saved to {os.path.join(output_dir, f"{self.project_name}_spagrn.h5ad")}')
+        output_file = os.path.join(output_dir, f'{self.project_name}_spagrn.h5ad')
+        self.data.write_h5ad(output_file)
+        print(f'Step 8: Results saved to {output_file}')
         print('========================================')
         print('SpaGRN inference pipeline completed successfully!')
         print('========================================')
