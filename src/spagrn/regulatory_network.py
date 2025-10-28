@@ -176,7 +176,7 @@ class InferNetwork(Network):
         print('----------------------------------------')
         # Record total pipeline start time
         pipeline_start_time = time.time()
-        
+
         # Set project name
         print(f'Project name is {self.project_name}')
         # Set general output directory
@@ -320,7 +320,7 @@ class InferNetwork(Network):
         step_elapsed = time.time() - step_start_time
         print(f'Step 8: Results saved to {output_file}')
         print(f'Step 8 completed in {format_time(step_elapsed)}')
-        
+
         # Print total pipeline execution time
         pipeline_elapsed = time.time() - pipeline_start_time
         print('========================================')
