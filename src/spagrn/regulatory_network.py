@@ -11,6 +11,7 @@
 
 # python core modules
 import os
+import time
 
 # third party modules
 import warnings
@@ -95,6 +96,23 @@ def save_list(l, fn='list.txt'):
         f.write('\n'.join(l))
 
 
+def format_time(seconds):
+    """
+    Format time in seconds to a human-readable string.
+    :param seconds: time in seconds
+    :return: formatted time string
+    """
+    if seconds < 60:
+        return f"{seconds:.2f} seconds"
+    elif seconds < 3600:
+        minutes = seconds / 60
+        return f"{minutes:.2f} minutes ({seconds:.2f} seconds)"
+    else:
+        hours = seconds / 3600
+        minutes = (seconds % 3600) / 60
+        return f"{hours:.2f} hours ({minutes:.2f} minutes)"
+
+
 class InferNetwork(Network):
     """
     Algorithms to infer Gene Regulatory Networks (GRNs)
@@ -156,6 +174,9 @@ class InferNetwork(Network):
               noweights=None,
               normalize: bool = False):
         print('----------------------------------------')
+        # Record total pipeline start time
+        pipeline_start_time = time.time()
+
         # Set project name
         print(f'Project name is {self.project_name}')
         # Set general output directory
@@ -182,6 +203,7 @@ class InferNetwork(Network):
             noweights = self.params["noweights"]
 
         # 1. load TF list
+        step_start_time = time.time()
         print('Step 1: Loading TF list...')
         if tfs_fn is None:
             tfs = 'all'
@@ -189,13 +211,19 @@ class InferNetwork(Network):
         else:
             tfs = self.load_tfs(tfs_fn)
             print(f'Loaded {len(tfs)} TFs')
+        step_elapsed = time.time() - step_start_time
+        print(f'Step 1 completed in {format_time(step_elapsed)}')
 
         # 2. load the ranking databases
+        step_start_time = time.time()
         print('Step 2: Loading ranking databases...')
         dbs = self.load_database(databases)
         print(f'Loaded {len(dbs)} ranking database(s)')
+        step_elapsed = time.time() - step_start_time
+        print(f'Step 2 completed in {format_time(step_elapsed)}')
 
         # 3. GRN Inference
+        step_start_time = time.time()
         print('Step 3: Starting GRN Inference (spatial gene co-expression analysis)...')
         adjacencies = self.spg(self.data,
                                gene_list=gene_list,
@@ -216,9 +244,11 @@ class InferNetwork(Network):
                                combine=combine,
                                mode=mode,
                                somde_k=somde_k)
-        print('Step 3: GRN Inference completed.')
+        step_elapsed = time.time() - step_start_time
+        print(f'Step 3: GRN Inference completed in {format_time(step_elapsed)}')
 
         # 4. Compute Modules
+        step_start_time = time.time()
         print('Step 4: Computing co-expression modules...')
         # ctxcore.genesig.Regulon
         modules = self.get_modules(adjacencies,
@@ -226,10 +256,12 @@ class InferNetwork(Network):
                                    cache=cache,
                                    save_tmp=save_tmp,
                                    rho_mask_dropouts=rho_mask_dropouts)
-        print('Step 4: Modules computation completed.')
+        step_elapsed = time.time() - step_start_time
+        print(f'Step 4: Modules computation completed in {format_time(step_elapsed)}')
         # before_cistarget(tfs, modules, project_name)
 
         # 5. Regulons Prediction aka cisTarget
+        step_start_time = time.time()
         print('Step 5: Running regulons prediction (cisTarget)...')
         # ctxcore.genesig.Regulon
         regulons = self.prune_modules(modules,
@@ -243,9 +275,11 @@ class InferNetwork(Network):
                                       auc_threshold=self.params["prune_auc_threshold"],
                                       nes_threshold=self.params["nes_threshold"],
                                       motif_similarity_fdr=self.params["motif_similarity_fdr"])
-        print('Step 5: Regulons prediction completed.')
+        step_elapsed = time.time() - step_start_time
+        print(f'Step 5: Regulons prediction completed in {format_time(step_elapsed)}')
 
         # 6.0. Cellular Enrichment (aka AUCell)
+        step_start_time = time.time()
         print('Step 6.0: Calculating cellular enrichment (AUCell)...')
         self.cal_auc(exp_mat,
                      regulons,
@@ -256,30 +290,42 @@ class InferNetwork(Network):
                      noweights=noweights,
                      normalize=normalize,
                      fn=os.path.join(self.tmp_dir, 'auc_mtx.csv'))
-        print('Step 6.0: Cellular enrichment calculation completed.')
+        step_elapsed = time.time() - step_start_time
+        print(f'Step 6.0: Cellular enrichment calculation completed in {format_time(step_elapsed)}')
 
         # 6.1. Receptor AUCs
         if niche_df is not None:
+            step_start_time = time.time()
             print('Step 6.1: Calculating receptor AUCs...')
             self.get_filtered_receptors(niche_df, receptor_key=receptor_key)
             receptor_auc_mtx = self.receptor_auc()
             self.isr(receptor_auc_mtx)
-            print('Step 6.1: Receptor AUCs calculation completed.')
+            step_elapsed = time.time() - step_start_time
+            print(f'Step 6.1: Receptor AUCs calculation completed in {format_time(step_elapsed)}')
 
         # 7. Calculate Regulon Specificity Scores
+        step_start_time = time.time()
         print('Step 7: Calculating regulon specificity scores...')
         self.cal_regulon_score(cluster_label=cluster_label, save_tmp=save_tmp,
                                fn=f'{self.tmp_dir}/regulon_specificity_scores.txt')
-        print('Step 7: Regulon specificity scores calculation completed.')
+        step_elapsed = time.time() - step_start_time
+        print(f'Step 7: Regulon specificity scores calculation completed in {format_time(step_elapsed)}')
 
         # 8. Save results to h5ad file
+        step_start_time = time.time()
         print('Step 8: Saving results to h5ad file...')
         # dtype=object
         output_file = os.path.join(output_dir, f'{self.project_name}_spagrn.h5ad')
         self.data.write_h5ad(output_file)
+        step_elapsed = time.time() - step_start_time
         print(f'Step 8: Results saved to {output_file}')
+        print(f'Step 8 completed in {format_time(step_elapsed)}')
+
+        # Print total pipeline execution time
+        pipeline_elapsed = time.time() - pipeline_start_time
         print('========================================')
-        print('SpaGRN inference pipeline completed successfully!')
+        print(f'SpaGRN inference pipeline completed successfully!')
+        print(f'Total execution time: {format_time(pipeline_elapsed)}')
         print('========================================')
         return self.data
 
@@ -415,11 +461,14 @@ class InferNetwork(Network):
         :param cache:
         :return:
         """
+        substep_start = time.time()
         print('Computing spatial weights matrix...')
         self.ind, neighbors, self.weights_n = neighbors_and_weights(adata, latent_obsm_key=latent_obsm_key,
                                                                     n_neighbors=n_neighbors)
         Weights = get_w(self.ind, self.weights_n)
         self.weights = Weights
+        substep_elapsed = time.time() - substep_start
+        print(f'Spatial weights matrix computed in {format_time(substep_elapsed)}')
 
         more_stats = pd.DataFrame(index=adata.var_names)
         if local:
@@ -428,25 +477,39 @@ class InferNetwork(Network):
                 more_stats = pd.read_csv(f'{self.tmp_dir}/local_more_stats.csv', index_col=0, sep='\t')
                 self.more_stats = more_stats
                 return more_stats
+            substep_start = time.time()
             print('Computing SOMDE...')
             adjusted_p_values = somde_p_values(adata, k=somde_k, layer_key=layer_key, latent_obsm_key=latent_obsm_key)
             more_stats['FDR_SOMDE'] = adjusted_p_values
             more_stats.to_csv(f'{self.tmp_dir}/local_more_stats.csv', sep='\t')
+            substep_elapsed = time.time() - substep_start
+            print(f'SOMDE computed in {format_time(substep_elapsed)}')
         else:
             if cache and os.path.isfile(f'{self.tmp_dir}/more_stats.csv'):
                 print(f'Found cached file {self.tmp_dir}/more_stats.csv')
                 more_stats = pd.read_csv(f'{self.tmp_dir}/more_stats.csv', index_col=0, sep='\t')
                 self.more_stats = more_stats
                 return more_stats
+            substep_start = time.time()
             print("Computing Moran's I...")
             morans_ps = morans_i_p_values(adata, Weights, layer_key=layer_key, n_process=n_processes)
             fdr_morans_ps = fdr(morans_ps)
+            substep_elapsed = time.time() - substep_start
+            print(f"Moran's I computed in {format_time(substep_elapsed)}")
+            
+            substep_start = time.time()
             print("Computing Geary's C...")
             gearys_cs = gearys_c(adata, Weights, layer_key=layer_key, n_process=n_processes, mode='pvalue')
             fdr_gearys_cs = fdr(gearys_cs)
+            substep_elapsed = time.time() - substep_start
+            print(f"Geary's C computed in {format_time(substep_elapsed)}")
+            
+            substep_start = time.time()
             print("Computing Getis G...")
             getis_gs = getis_g(adata, Weights, n_processes=n_processes, layer_key=layer_key, mode='pvalue')
             fdr_getis_gs = fdr(getis_gs)
+            substep_elapsed = time.time() - substep_start
+            print(f"Getis G computed in {format_time(substep_elapsed)}")
             # save results
             more_stats = pd.DataFrame({
                 'C': gearys_cs,
@@ -475,17 +538,31 @@ class InferNetwork(Network):
         :param n_processes:
         :return:
         """
+        substep_start = time.time()
         print('Computing spatial weights matrix...')
         ind, neighbors, weights_n = neighbors_and_weights(adata, latent_obsm_key=latent_obsm_key,
                                                           n_neighbors=n_neighbors)
         Weights = get_w(ind, weights_n)
+        substep_elapsed = time.time() - substep_start
+        print(f'Spatial weights matrix computed in {format_time(substep_elapsed)}')
 
+        substep_start = time.time()
         print("Computing Moran's I...")
         morans_ps = morans_i_zscore(adata, Weights, layer_key=layer_key, n_process=n_processes)
+        substep_elapsed = time.time() - substep_start
+        print(f"Moran's I computed in {format_time(substep_elapsed)}")
+        
+        substep_start = time.time()
         print("Computing Geary's C...")
         gearys_cs = gearys_c(adata, Weights, layer_key=layer_key, n_process=n_processes, mode='zscore')
+        substep_elapsed = time.time() - substep_start
+        print(f"Geary's C computed in {format_time(substep_elapsed)}")
+        
+        substep_start = time.time()
         print("Computing Getis G...")
         getis_gs = getis_g(adata, Weights, n_processes=n_processes, layer_key=layer_key, mode='zscore')
+        substep_elapsed = time.time() - substep_start
+        print(f"Getis G computed in {format_time(substep_elapsed)}")
         # save results
         more_stats = pd.DataFrame({
             'C_zscore': gearys_cs,
@@ -616,13 +693,17 @@ class InferNetwork(Network):
             if gene_list:
                 print('[spg] Using provided gene_list')
                 hs_genes = gene_list
+                substep_start = time.time()
                 print('Computing spatial weights matrix...')
                 self.ind, neighbors, self.weights_n = neighbors_and_weights(data, latent_obsm_key=latent_obsm_key,
                                                                             n_neighbors=n_neighbors)
                 Weights = get_w(self.ind, self.weights_n)
                 self.weights = Weights
+                substep_elapsed = time.time() - substep_start
+                print(f'Spatial weights matrix computed in {format_time(substep_elapsed)}')
             else:
                 print('[spg] No gene_list provided, computing from hotspot')
+                substep_start = time.time()
                 hs = hotspot.Hotspot(data,
                                      layer_key=layer_key,
                                      model=model,
@@ -631,10 +712,17 @@ class InferNetwork(Network):
                                      **kwargs)
                 print('[spg] Creating KNN graph...')
                 hs.create_knn_graph(weighted_graph=weighted_graph, n_neighbors=n_neighbors)
+                substep_elapsed = time.time() - substep_start
+                print(f'[spg] KNN graph created in {format_time(substep_elapsed)}')
+                
+                substep_start = time.time()
                 print('[spg] Computing autocorrelations...')
                 hs_results = hs.compute_autocorrelations()
+                substep_elapsed = time.time() - substep_start
+                print(f'[spg] Autocorrelations computed in {format_time(substep_elapsed)}')
 
                 # 1: Select genes
+                substep_start = time.time()
                 print('[spg] Selecting genes via spatial autocorrelation...')
                 self.spatial_autocorrelation(data,
                                              layer_key=layer_key,
@@ -660,9 +748,12 @@ class InferNetwork(Network):
                 print(f'[spg] Selected {len(hs_genes)} genes')
                 if save_tmp:
                     save_list(hs_genes, fn=f'{self.tmp_dir}/selected_genes.txt')
+                substep_elapsed = time.time() - substep_start
+                print(f'[spg] Gene selection completed in {format_time(substep_elapsed)}')
 
             # 2. Define gene-gene relationships with pair-wise local correlations
             print(f'[spg] Current mode is {mode}')
+            substep_start = time.time()
             if mode == 'zscore':
                 print('[spg] Computing local correlations in zscore mode...')
                 # subset by TFs
@@ -709,6 +800,8 @@ class InferNetwork(Network):
                                                                select_genes_not_tfs,
                                                                num_workers=jobs,
                                                                layer_key=layer_key)
+            substep_elapsed = time.time() - substep_start
+            print(f'[spg] Local correlations computed in {format_time(substep_elapsed)}')
 
         print('[spg] Processing local_correlations...')
         local_correlations['importance'] = local_correlations['importance'].astype(np.float64)
@@ -748,11 +841,14 @@ class InferNetwork(Network):
             self.modules = modules
             print('[get_modules] Returning cached modules')
             return modules
+        
+        substep_start = time.time()
         print('[get_modules] Computing modules from adjacencies...')
         modules = list(
             modules_from_adjacencies(adjacencies, matrix, rho_mask_dropouts=rho_mask_dropouts, **kwargs)
         )
-        print(f'[get_modules] Created {len(modules)} modules')
+        substep_elapsed = time.time() - substep_start
+        print(f'[get_modules] Created {len(modules)} modules in {format_time(substep_elapsed)}')
         self.modules = modules
         if save_tmp:
             print('[get_modules] Saving modules to file...')
@@ -809,9 +905,12 @@ class InferNetwork(Network):
             num_workers = cpu_count()
         # infer function
         # #1.
+        substep_start = time.time()
         with ProgressBar():
             df = prune2df(dbs, modules, motif_anno_fn, num_workers=num_workers, **kwargs)  # rank_threshold
             df.to_csv(fn)
+        substep_elapsed = time.time() - substep_start
+        print(f'Motif enrichment computed in {format_time(substep_elapsed)}')
         # this function actually did two things. 1. get df, 2. turn df into list of Regulons
         # #2.
         regulon_list = df2regulons(df)
@@ -871,6 +970,7 @@ class InferNetwork(Network):
         if num_workers is None:
             num_workers = cpu_count()
 
+        substep_start = time.time()
         auc_mtx = aucell(matrix,
                          regulons,
                          auc_threshold=auc_threshold,
@@ -878,6 +978,8 @@ class InferNetwork(Network):
                          noweights=noweights,
                          normalize=normalize,
                          seed=seed)
+        substep_elapsed = time.time() - substep_start
+        print(f'AUCell calculation completed in {format_time(substep_elapsed)}')
 
         self.auc_mtx = auc_mtx
         self.data.obsm['auc_mtx'] = self.auc_mtx
