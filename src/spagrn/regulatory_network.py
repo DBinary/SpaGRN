@@ -44,7 +44,10 @@ from .c_autocor import gearys_c
 from .m_autocor import morans_i_p_values, morans_i_zscore
 from .g_autocor import getis_g
 from .network import Network
-
+from .m_autocor_fast import morans_i_p_values_scanpy_exact
+from .g_autocor_fast import getis_g_fast
+from .c_autocor_fast import gearys_c_fast
+from .global_bivariate_gearys_C_fast import global_bivariate_gearys_C_fast
 
 def intersection_ci(iterableA, iterableB, key=lambda x: x) -> list:
     """
@@ -172,6 +175,8 @@ class InferNetwork(Network):
               mode='moran',
               somde_k=20,
               noweights=None,
+              torch_device='cpu',
+              pair_batch_size=4096,
               normalize: bool = False):
         print('----------------------------------------')
         # Record total pipeline start time
@@ -243,7 +248,9 @@ class InferNetwork(Network):
                                operation=operation,
                                combine=combine,
                                mode=mode,
-                               somde_k=somde_k)
+                               somde_k=somde_k,
+                               pair_batch_size=pair_batch_size,
+                               torch_device=torch_device,)
         step_elapsed = time.time() - step_start_time
         print(f'Step 3: GRN Inference completed in {format_time(step_elapsed)}')
 
@@ -448,7 +455,8 @@ class InferNetwork(Network):
                                 somde_k=20,
                                 n_processes=None,
                                 local=False,
-                                cache=False):
+                                cache=False,
+                                torch_device='cpu',):
         """
         Calculate spatial autocorrelation values using Moran's I, Geary'C, Getis's G and SOMDE algorithms
         :param adata:
@@ -492,21 +500,31 @@ class InferNetwork(Network):
                 return more_stats
             substep_start = time.time()
             print("Computing Moran's I...")
-            morans_ps = morans_i_p_values(adata, Weights, layer_key=layer_key, n_process=n_processes)
+            if torch_device=='cpu':
+                morans_ps = morans_i_p_values(adata, Weights, layer_key=layer_key, n_process=n_processes)
+            else:
+                morans_ps = morans_i_p_values_scanpy_exact(adata, Weights, layer_key=layer_key)
             fdr_morans_ps = fdr(morans_ps)
             substep_elapsed = time.time() - substep_start
             print(f"Moran's I computed in {format_time(substep_elapsed)}")
             
             substep_start = time.time()
             print("Computing Geary's C...")
-            gearys_cs = gearys_c(adata, Weights, layer_key=layer_key, n_process=n_processes, mode='pvalue')
+            if torch_device=='cpu':
+                gearys_cs = gearys_c(adata, Weights, layer_key=layer_key, n_process=n_processes, mode='pvalue')
+            else:
+                gearys_cs = gearys_c_fast(adata, Weights, layer_key=layer_key, mode='pvalue', batch_size=1024,
+                                          torch_device='cuda:0', torch_dtype='float64')
             fdr_gearys_cs = fdr(gearys_cs)
             substep_elapsed = time.time() - substep_start
             print(f"Geary's C computed in {format_time(substep_elapsed)}")
             
             substep_start = time.time()
             print("Computing Getis G...")
-            getis_gs = getis_g(adata, Weights, n_processes=n_processes, layer_key=layer_key, mode='pvalue')
+            if torch_device=='cpu':
+                getis_gs = getis_g(adata, Weights, n_processes=n_processes, layer_key=layer_key, mode='pvalue')
+            else:
+                getis_gs = getis_g_fast(adata, Weights, n_processes=n_processes, layer_key=layer_key, mode='pvalue')
             fdr_getis_gs = fdr(getis_gs)
             substep_elapsed = time.time() - substep_start
             print(f"Getis G computed in {format_time(substep_elapsed)}")
@@ -644,6 +662,8 @@ class InferNetwork(Network):
             somde_k=20,
             fn: str = 'adj.csv',
             mode='moran',
+            torch_device=True,
+            pair_batch_size=4096,
             **kwargs) -> pd.DataFrame:
         """
         Inference of co-expression modules by spatial-proximity-graph (SPG) model.
@@ -731,7 +751,8 @@ class InferNetwork(Network):
                                              somde_k=somde_k,
                                              n_processes=jobs,
                                              local=local,
-                                             cache=cache)
+                                             cache=cache,
+                                             torch_device=torch_device,)
                 self.more_stats['FDR'] = hs_results.FDR
                 if save_tmp:
                     print('[spg] Saving more_stats to file...')
@@ -794,12 +815,22 @@ class InferNetwork(Network):
                 print('[spg] Computing flat weights...')
                 fw = flat_weights(data.obs_names, self.ind, self.weights_n, n_neighbors=n_neighbors)
                 print('[spg] Computing global bivariate Geary C...')
-                local_correlations = global_bivariate_gearys_C(data,
+                if torch_device=='cpu':
+                    local_correlations = global_bivariate_gearys_C(data,
                                                                fw,
                                                                tfs_in_data,
                                                                select_genes_not_tfs,
                                                                num_workers=jobs,
                                                                layer_key=layer_key)
+                else:
+                    local_correlations = global_bivariate_gearys_C_fast(data,
+                                                                    fw,
+                                                                    tfs_in_data,
+                                                                    select_genes_not_tfs,
+                                                                    layer_key=layer_key,
+                                                                    pair_batch_size=pair_batch_size,
+                                                                    torch_device=torch_device,
+                                                                   )
             substep_elapsed = time.time() - substep_start
             print(f'[spg] Local correlations computed in {format_time(substep_elapsed)}')
 
